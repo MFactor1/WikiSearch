@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	workers = 7
+	workers = 12
 	reader_group sync.WaitGroup
 	indexer_group sync.WaitGroup
 	writer_group sync.WaitGroup
@@ -58,6 +58,14 @@ func main() {
 
 	index_chan := make(chan common.PageData, 1000)
 	write_chan := make(chan containers.PageTF, 1000)
+
+	go func() {
+		for {
+			log.Printf("Indexing Queue: %d", len(index_chan))
+			log.Printf("Write Queue: %d", len(write_chan))
+			time.Sleep(1 * time.Second)
+		}
+	}()
 
 	reader_group.Add(1)
 	writer_group.Add(1)
@@ -114,8 +122,8 @@ func socketReader(decoder *msgpack.Decoder, out_chan chan <- common.PageData) {
 		start := time.Now()
 		err := decoder.Decode(&page)
 		wait = time.Since(start).Microseconds() + wait
-		if diff > 1000 {
-			log.Println("wxindexer/reader: avg recieve wait time:", wait / 1000)
+		if diff >= 1000 {
+			//log.Println("wxindexer/reader: avg recieve wait time:", wait / 1000)
 			diff = 0
 			wait = 0
 		}

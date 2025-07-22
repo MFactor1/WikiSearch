@@ -35,8 +35,21 @@ func index(
 			word_count++
 		}
 	}
+
+	var max_term_count = 0
+	for _, num := range frequencies {
+		if num > max_term_count {
+			max_term_count = num
+		}
+	}
+
+	term_frequencies := make(map[string]float32)
+	for term, num := range frequencies {
+		term_frequencies[term] = 0.5 + 0.5 * (float32(num) / float32(max_term_count))
+	}
+
 	flushToRedis(rdb, frequencies)
-	return containers.PageTF{Title: page.Title, URL: page.URL, Links: data.Links, Words: frequencies}
+	return containers.PageTF{Title: page.Title, URL: page.URL, Links: data.Links, Words: term_frequencies}
 }
 
 func flushToRedis(rdb *redis.Client, wordCounts map[string]int) error {

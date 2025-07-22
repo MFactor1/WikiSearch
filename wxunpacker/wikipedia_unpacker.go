@@ -1,7 +1,6 @@
 package main
 
 import (
-	//"compress/bzip2"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -21,6 +20,12 @@ type Page struct {
 }
 
 func main() {
+	num_pages, err := countPages("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Starting Indexing")
 	addr := "/tmp/windexIPC.sock"
 	connection, err := net.Dial("unix", addr)
 	if err != nil {
@@ -30,7 +35,6 @@ func main() {
 
 	encoder := msgpack.NewEncoder(connection)
 
-	//countPages("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
 	file, err := os.Open("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
 	if err != nil {
 		panic(err)
@@ -43,11 +47,21 @@ func main() {
 	var page Page
 	var i = 0
 	var diff = 0
-	var wait int64 = 0
+	var send_chan = make(chan common.PageData, 1000)
 
+	go sendPages(send_chan, encoder)
+
+	start := time.Now()
 	for {
 		tok, err := decoder.Token()
 		if err == io.EOF {
+			elapsed := time.Since(start).Seconds()
+			fmt.Printf("wxunpacker: Reached EOF, processed %d pages in %dh, %dm, %ds\n",
+			i,
+			int(elapsed) / 3600,
+			(int(elapsed) % 3600) / 60,
+			int(elapsed) % 60,
+		)
 			break
 		} else if err != nil {
 			panic(err)
@@ -60,24 +74,28 @@ func main() {
 					decoder.DecodeElement(&page, &t)
 					if page.Namespace == "0" && !strings.HasPrefix(page.Text, "#REDIRECT") && page.Title != "" {
 						if diff >= 1000 {
-							fmt.Println("wxunpacker: Processed:", i)
-							fmt.Println("wxunpacker: avg send wait time:", wait / 1000)
+							elapsed := time.Since(start).Seconds()
+							completion := float64(i) / float64(num_pages)
+							etr_s := int(float64(elapsed) / completion - float64(elapsed))
+							fmt.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
+								i,
+								num_pages,
+								100 * completion,
+								etr_s / 3600,
+								(etr_s % 3600) / 60,
+								etr_s % 60,
+								int(elapsed) / 3600,
+								(int(elapsed) % 3600) / 60,
+								int(elapsed) % 60,
+							)
 							diff = 0
-							wait = 0
 						}
 						diff++
 						i++
 
 						url_title := strings.ReplaceAll(page.Title, " ", "_")
 						url_data := "https://en.wikipedia.org/wiki/" + url.PathEscape(url_title)
-						data := common.PageData{Title: page.Title, URL: url_data, Body: page.Text}
-						start := time.Now()
-						err := encoder.Encode(data)
-						wait = time.Since(start).Microseconds() + wait
-						if err != nil {
-							panic(err)
-						}
-						//fmt.Println(page.Text)
+						send_chan <- common.PageData{Title: page.Title, URL: url_data, Body: page.Text}
 					}
 				}
 		default:
@@ -86,6 +104,7 @@ func main() {
 }
 
 func countPages(path string) (int, error) {
+	return 8032054, nil
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, err
@@ -93,6 +112,7 @@ func countPages(path string) (int, error) {
 	defer file.Close()
 
 	decoder := xml.NewDecoder(file)
+	var page Page
 
 	count := 0
 	diff := 0
@@ -105,15 +125,37 @@ func countPages(path string) (int, error) {
 		}
 
 		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "page" {
-			if diff >= 1000 {
-				fmt.Println("Preprocessed:", count)
-				diff = 0
+			decoder.DecodeElement(&page, &se)
+			if page.Namespace == "0" && !strings.HasPrefix(page.Text, "#REDIRECT") && page.Title != "" {
+				if diff >= 1000 {
+					fmt.Println("wxunpacker: preprocessed:", count)
+					diff = 0
+				}
+				diff++
+				count++
 			}
-			diff++
-			count++
 		}
 	}
 
 	return count, nil
 }
 
+func sendPages(in_chan <- chan common.PageData, sock *msgpack.Encoder) {
+	var diff = 0
+	var wait int64 = 0
+	for {
+		page := <- in_chan
+		start := time.Now()
+		err := sock.Encode(page)
+		wait = time.Since(start).Microseconds() + wait
+		if err != nil {
+			panic(err)
+		}
+		if diff >= 1000 {
+			//fmt.Printf("wxunpacker: Avg send wait time: %d\n", wait / 1000)
+			diff = 0
+			wait = 0
+		}
+		diff++
+	}
+}

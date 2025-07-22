@@ -32,7 +32,6 @@ var (
 	reWhitespaceLines    = regexp.MustCompile(`(?m)^[ \t\r\f\v]+$`)
 	reMultipleNewlines   = regexp.MustCompile(`\n`)
 	invalidPrefixes      = get_invalid_namespaces()
-	linkPrefix 			 = "https://en.wikipedia.org/wiki/"
 )
 
 type WikipediaCleaner struct {}
@@ -56,9 +55,8 @@ func (v *WikipediaCleaner) Clean(text string) containers.Doc {
 		link := strings.TrimSpace(match[1])
 		parts := strings.Split(link, ":")
 		if link != "" && !linkSet[link] && (len(parts) <= 1 || !invalidPrefixes.Contains(parts[0])){
-			link = strings.ReplaceAll(link, " ", "_")
+			link = url.PathEscape(strings.ReplaceAll(link, " ", "_"))
 			linkSet[link] = true
-			link = linkPrefix + url.PathEscape(link)
 			links = append(links, link)
 		}
 	}

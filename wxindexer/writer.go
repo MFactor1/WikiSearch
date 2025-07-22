@@ -14,7 +14,7 @@ func jsonWriter(tfChan <- chan containers.PageTF) {
 	if err != nil {
 		panic(err)
 	}
-	f, err := os.Create("./localdata/.tf_output.jsonl")
+	f, err := os.Create("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/.tf_output.jsonl")
 	if err != nil {
 		panic(err)
 	}
