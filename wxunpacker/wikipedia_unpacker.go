@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"time"
+	"regexp"
 	"github.com/vmihailenco/msgpack/v5"
 	"common"
 )
@@ -18,6 +19,8 @@ type Page struct {
 	Text string `xml:"revision>text"`
 	Namespace string `xml:"ns"`
 }
+
+var reRedirect = regexp.MustCompile(`^#REDIRECT \[\[(.*?)\]\]`)
 
 func main() {
 	num_pages, err := countPages("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
@@ -67,37 +70,38 @@ func main() {
 			panic(err)
 		}
 
-		switch t := tok.(type) {
+		switch element := tok.(type) {
 		case xml.StartElement:
-				if t.Name.Local == "page" {
-					page = Page{}
-					decoder.DecodeElement(&page, &t)
-					if page.Namespace == "0" && !strings.HasPrefix(page.Text, "#REDIRECT") && page.Title != "" {
-						if diff >= 1000 {
-							elapsed := time.Since(start).Seconds()
-							completion := float64(i) / float64(num_pages)
-							etr_s := int(float64(elapsed) / completion - float64(elapsed))
-							fmt.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
-								i,
-								num_pages,
-								100 * completion,
-								etr_s / 3600,
-								(etr_s % 3600) / 60,
-								etr_s % 60,
-								int(elapsed) / 3600,
-								(int(elapsed) % 3600) / 60,
-								int(elapsed) % 60,
-							)
-							diff = 0
-						}
-						diff++
-						i++
+			if element.Name.Local != "page" {
+				continue
+			}
+			page = Page{}
+			decoder.DecodeElement(&page, &element)
+			if page.Namespace != "0" || page.Title == "" {
+				continue
+			}
+			if diff >= 1000 {
+				elapsed := time.Since(start).Seconds()
+				completion := float64(i) / float64(num_pages)
+				etr_s := int(float64(elapsed) / completion - float64(elapsed))
+				fmt.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
+					i,
+					num_pages,
+					100 * completion,
+					etr_s / 3600,
+					(etr_s % 3600) / 60,
+					etr_s % 60,
+					int(elapsed) / 3600,
+					(int(elapsed) % 3600) / 60,
+					int(elapsed) % 60,
+				)
+				diff = 0
+			}
+			diff++
+			i++
 
-						url_title := strings.ReplaceAll(page.Title, " ", "_")
-						url_data := "https://en.wikipedia.org/wiki/" + url.PathEscape(url_title)
-						send_chan <- common.PageData{Title: page.Title, URL: url_data, Body: page.Text}
-					}
-				}
+			url_title := url.PathEscape(strings.ReplaceAll(page.Title, " ", "_"))
+			send_chan <- common.PageData{Title: page.Title, URL: url_title, Body: page.Text}
 		default:
 		}
 	}

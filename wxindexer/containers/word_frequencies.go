@@ -5,4 +5,5 @@ type PageTF struct {
 	URL string
 	Links []string
 	Words map[string]float32
+	Redirect *string
 }

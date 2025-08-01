@@ -58,6 +58,7 @@ func main() {
 
 	index_chan := make(chan common.PageData, 1000)
 	write_chan := make(chan containers.PageTF, 1000)
+	pg_map_chan := make(chan containers.PageLinkData, 1000)
 
 	go func() {
 		for {
@@ -68,21 +69,22 @@ func main() {
 	}()
 
 	reader_group.Add(1)
-	writer_group.Add(1)
+	writer_group.Add(2)
 	indexer_group.Add(workers)
 
 	go socketReader(decoder, index_chan)
 	go jsonWriter(write_chan)
-
+	go pgMapper(pg_map_chan)
 
 	for i := range workers {
-		go indexer(i, cleaner, stopwords, rdb, index_chan, write_chan)
+		go indexer(i, cleaner, stopwords, rdb, index_chan, write_chan, pg_map_chan)
 	}
 
 	reader_group.Wait()
 	close(index_chan)
 	indexer_group.Wait()
 	close(write_chan)
+	close(pg_map_chan)
 	writer_group.Wait()
 }
 
@@ -146,17 +148,29 @@ func indexer(
 	stopwords *containers.Set,
 	rdb *redis.Client,
 	in_chan <- chan common.PageData,
-	out_chan chan <- containers.PageTF) {
+	write_chan chan <- containers.PageTF,
+	pg_map_chan chan <- containers.PageLinkData) {
 
 	var tf containers.PageTF
 	for {
 		if page, ok := <- in_chan; ok {
 			tf = index(page, cleaner, stopwords, rdb)
-			out_chan <- tf
+			write_chan <- tf
+			pg_map_chan <- containers.PageLinkData{URL: tf.URL, Links: &tf.Links, Redirect: tf.Redirect}
 		} else {
 			log.Printf("wxindexer/indexer@%d: exiting\n", id)
 			break
 		}
 	}
 	indexer_group.Done()
+}
+
+func pgMapper(pg_map_chan <- chan containers.PageLinkData) {
+	loadPageWeb("./localdata/pagegraph/.pagegraph")
+	for pg := range pg_map_chan {
+		addPage(pg)
+	}
+	dumpPageWeb("./localdata/pagegraph/.pagegraph")
+	log.Println("wxindexer/pgmapper: exiting")
+	writer_group.Done()
 }

@@ -18,12 +18,22 @@ func index(
 	stopwords *containers.Set,
 	rdb *redis.Client,
 ) containers.PageTF {
-
 	// Clean raw text
 	data := cleaner.Clean(page.Body)
 
+	// Early return for redirects
+	if data.Redirect != nil {
+		return containers.PageTF{
+			Title: page.Title,
+			URL: page.URL,
+			Links: make([]string, 0),
+			Words: make(map[string]float32),
+			Redirect: data.Redirect,
+		}
+	}
+
 	// Tokenize
-	words := strings.Split(data.Body, " ")
+	words := strings.Split(*data.Body, " ")
 
 	// Index
 	frequencies := make(map[string]int)
@@ -49,7 +59,13 @@ func index(
 	}
 
 	flushToRedis(rdb, frequencies)
-	return containers.PageTF{Title: page.Title, URL: page.URL, Links: data.Links, Words: term_frequencies}
+	return containers.PageTF{
+		Title: page.Title,
+		URL: page.URL,
+		Links: *data.Links,
+		Words: term_frequencies,
+		Redirect: nil,
+	}
 }
 
 func flushToRedis(rdb *redis.Client, wordCounts map[string]int) error {

@@ -31,6 +31,7 @@ var (
 	reExtraWhitespace    = regexp.MustCompile(`[ \t]+`)
 	reWhitespaceLines    = regexp.MustCompile(`(?m)^[ \t\r\f\v]+$`)
 	reMultipleNewlines   = regexp.MustCompile(`\n`)
+	reRedirect 			 = regexp.MustCompile(`^#REDIRECT \[\[(.*?)\]\]`)
 	invalidPrefixes      = get_invalid_namespaces()
 )
 
@@ -42,6 +43,13 @@ func NewWikipediaCleaner() Cleaner {
 }
 
 func (v *WikipediaCleaner) Clean(text string) containers.Doc {
+
+	// Check for a redirect page
+	if redirect_text := reRedirect.FindStringSubmatch(text); len(redirect_text) > 1 {
+		redirect_link := url.PathEscape(strings.ReplaceAll(redirect_text[1], " ", "_"))
+		return containers.Doc{Body: nil, Links: nil, Redirect: &redirect_link}
+	}
+
 	var links []string
 	linkSet := make(map[string]bool)
 
@@ -96,7 +104,9 @@ func (v *WikipediaCleaner) Clean(text string) containers.Doc {
 	// Lowercase everything
 	text = strings.ToLower(text)
 
-	return containers.Doc{Body: strings.TrimSpace(text), Links: links}
+	text = strings.TrimSpace(text)
+
+	return containers.Doc{Body: &text, Links: &links, Redirect: nil}
 }
 
 func get_invalid_namespaces() *containers.Set {

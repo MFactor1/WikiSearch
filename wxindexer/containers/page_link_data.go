@@ -1,7 +1,7 @@
 package containers
 
-type Doc struct {
-	Body *string
+type PageLinkData struct {
+	URL string
 	Links *[]string
 	Redirect *string
 }
