@@ -25,13 +25,13 @@ var (
 )
 
 func main() {
-	log.Println("wxindexer: initalizing cleaner")
+	log.Println("wxindexer/manager: initalizing cleaner")
 	cleaner := cleaners.NewWikipediaCleaner()
 
-	log.Println("wxindexer: initializing redis client")
+	log.Println("wxindexer/manager: initializing redis client")
 	rdb := newRedisClient()
 
-	log.Println("wxindexer: loading stopwords")
+	log.Println("wxindexer/manager: loading stopwords")
 	stopwords, err := loadStopWords()
 	if err != nil {
 		panic(err)
@@ -46,13 +46,13 @@ func main() {
 	}
 	defer listener.Close()
 
-	log.Println("wxindexer: waiting for connection...")
+	log.Println("wxindexer/manager: waiting for connection...")
 	connection, err := listener.Accept()
 	if err != nil {
 		panic(err)
 	}
 	defer connection.Close()
-	log.Println("wxindexer: connection established")
+	log.Println("wxindexer/manager: connection established")
 
 	decoder := msgpack.NewDecoder(connection)
 
@@ -62,8 +62,10 @@ func main() {
 
 	go func() {
 		for {
-			log.Printf("Indexing Queue: %d", len(index_chan))
-			log.Printf("Write Queue: %d", len(write_chan))
+			log.Printf("wxindexer/manager: Indexing Queue: %d", len(index_chan))
+			log.Printf("wxindexer/manager: Write Queue: %d", len(write_chan))
+			log.Printf("wxindexer/manager: Page Map Queue: %d", len(pg_map_chan))
+			logStats()
 			time.Sleep(1 * time.Second)
 		}
 	}()

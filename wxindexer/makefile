@@ -50,6 +50,7 @@ run: build
 .PHONY: clean
 clean:
 	rm -rf $(PROJECT_DIR)/build
+	rm -rf $(PROJECT_DIR)/localdata/pagegraph/.pagegraph
 
 .PHONY: docker-build
 docker-build:

@@ -63,3 +63,6 @@ func loadPageWeb(path string) {
 	decoder.Decode(&pg_graph)
 }
 
+func logStats() {
+	log.Printf("wxindexer/pgmapper: pgmap size: %d", len(pg_graph))
+}

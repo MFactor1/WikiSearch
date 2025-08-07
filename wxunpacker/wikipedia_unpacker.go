@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/xml"
-	"fmt"
+	"log"
 	"io"
 	"os"
 	"strings"
@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"time"
 	"regexp"
+	"bufio"
 	"github.com/vmihailenco/msgpack/v5"
 	"common"
 )
@@ -23,12 +24,12 @@ type Page struct {
 var reRedirect = regexp.MustCompile(`^#REDIRECT \[\[(.*?)\]\]`)
 
 func main() {
-	num_pages, err := countPages("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
+	num_pages, err := countPagesCustomDecoder("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("Starting Indexing")
+	log.Println("Starting Indexing")
 	addr := "/tmp/windexIPC.sock"
 	connection, err := net.Dial("unix", addr)
 	if err != nil {
@@ -59,7 +60,7 @@ func main() {
 		tok, err := decoder.Token()
 		if err == io.EOF {
 			elapsed := time.Since(start).Seconds()
-			fmt.Printf("wxunpacker: Reached EOF, processed %d pages in %dh, %dm, %ds\n",
+			log.Printf("wxunpacker: Reached EOF, processed %d pages in %dh, %dm, %ds\n",
 			i,
 			int(elapsed) / 3600,
 			(int(elapsed) % 3600) / 60,
@@ -84,7 +85,7 @@ func main() {
 				elapsed := time.Since(start).Seconds()
 				completion := float64(i) / float64(num_pages)
 				etr_s := int(float64(elapsed) / completion - float64(elapsed))
-				fmt.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
+				log.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
 					i,
 					num_pages,
 					100 * completion,
@@ -107,8 +108,8 @@ func main() {
 	}
 }
 
-func countPages(path string) (int, error) {
-	return 8032054, nil
+func countPagesWithXMLDecoder(path string) (int, error) {
+	//return 8032054, nil
 	file, err := os.Open(path)
 	if err != nil {
 		return 0, err
@@ -130,9 +131,9 @@ func countPages(path string) (int, error) {
 
 		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "page" {
 			decoder.DecodeElement(&page, &se)
-			if page.Namespace == "0" && !strings.HasPrefix(page.Text, "#REDIRECT") && page.Title != "" {
+			if page.Namespace == "0" && page.Title != "" {
 				if diff >= 1000 {
-					fmt.Println("wxunpacker: preprocessed:", count)
+					log.Println("wxunpacker: preprocessed:", count)
 					diff = 0
 				}
 				diff++
@@ -142,6 +143,88 @@ func countPages(path string) (int, error) {
 	}
 
 	return count, nil
+}
+
+func countPagesCustomDecoder(path string) (int, error) {
+	return 18334374, nil
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	reader := bufio.NewReaderSize(file, 1024*1024)
+
+	var in_page = false
+	var ns_valid = false
+	var title_valid = false
+	var pages = 0
+	var invalid = 0
+	var count = 0
+	var total = 0
+	var done = false
+
+	for !done {
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			done = true
+		} else if err != nil {
+			log.Fatal(err)
+		}
+		line = strings.TrimSpace(line)
+		if in_page {
+			if ns, ok := strings.CutPrefix(line, "<ns>"); ok {
+				ns := strings.TrimSuffix(ns, "</ns>")
+				//log.Printf("Found ns %s\n", line)
+				if ns == "0" {
+					//log.Printf("ns valid")
+					ns_valid = true
+				} else {
+					//log.Printf("ns INVALID: %s\n", line)
+					in_page = false
+					invalid++
+				}
+			} else if title, ok := strings.CutPrefix(line, "<title>"); ok {
+				title := strings.TrimSuffix(title, "</title>")
+				//log.Printf("Found title %s\n", line)
+				if title != "" {
+					//log.Printf("title valid")
+					title_valid = true
+				} else {
+					//log.Printf("title INVALID: %s\n", line)
+					in_page = false
+					invalid++
+				}
+			} else if strings.HasPrefix(line, "</page>") {
+				//log.Printf("found end of page")
+				if ns_valid && title_valid {
+					//log.Printf("Page valid")
+					pages++
+					count++
+					if count >= 10000 {
+						log.Printf("wxunpacker/preprocesser: preprocessed: %d\n", pages)
+						log.Printf("wxunpacker/preprocesser: invalid: %d\n", invalid)
+						log.Printf("wxunpacker/preprocesser: total: %d\n", total)
+						count = 0
+						//return pages, nil
+					}
+				} else {
+					//log.Printf("Page rejected")
+					invalid++
+				}
+				ns_valid = false
+				title_valid = false
+				in_page = false
+			}
+		} else {
+			if strings.HasPrefix(line, "<page>") {
+				//log.Printf("Found page: %s\n", line)
+				in_page = true
+				total++
+			}
+		}
+	}
+	return pages, nil
 }
 
 func sendPages(in_chan <- chan common.PageData, sock *msgpack.Encoder) {
@@ -156,7 +239,7 @@ func sendPages(in_chan <- chan common.PageData, sock *msgpack.Encoder) {
 			panic(err)
 		}
 		if diff >= 1000 {
-			//fmt.Printf("wxunpacker: Avg send wait time: %d\n", wait / 1000)
+			//log.Printf("wxunpacker: Avg send wait time: %d\n", wait / 1000)
 			diff = 0
 			wait = 0
 		}
