@@ -12,6 +12,7 @@ import (
 	"common"
 	"wxindexer/cleaners"
 	"wxindexer/containers"
+	"wxindexer/pagerank"
 
 	"github.com/vmihailenco/msgpack/v5"
 	"github.com/redis/go-redis/v9"
@@ -65,7 +66,7 @@ func main() {
 			log.Printf("wxindexer/manager: Indexing Queue: %d", len(index_chan))
 			log.Printf("wxindexer/manager: Write Queue: %d", len(write_chan))
 			log.Printf("wxindexer/manager: Page Map Queue: %d", len(pg_map_chan))
-			logStats()
+			pagerank.LogStats()
 			time.Sleep(1 * time.Second)
 		}
 	}()
@@ -168,11 +169,11 @@ func indexer(
 }
 
 func pgMapper(pg_map_chan <- chan containers.PageLinkData) {
-	loadPageWeb("./localdata/pagegraph/.pagegraph")
+	pagerank.LoadPageWeb("./localdata/pagegraph/.pagegraph")
 	for pg := range pg_map_chan {
-		addPage(pg)
+		pagerank.AddPage(pg)
 	}
-	dumpPageWeb("./localdata/pagegraph/.pagegraph")
+	pagerank.DumpPageWeb("./localdata/pagegraph/.pagegraph")
 	log.Println("wxindexer/pgmapper: exiting")
 	writer_group.Done()
 }
