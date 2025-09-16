@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"encoding/json"
+	"io"
 	"wxindexer/containers"
 )
 
@@ -113,11 +114,24 @@ func get_invalid_namespaces() *containers.Set {
 	fmt.Println("wxindexer/cleaner: fetching invalid namespaces")
 	url := "https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=namespaces&format=json"
 
-	resp, err := http.Get(url)
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	req.Header.Set("User-Agent", "wxindexer/0.0.0dev3 (https://github.com/MFactor1/windex)") // set a descriptive UA
+
+	resp, err := client.Do(req)
 	if err != nil {
 		panic(err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		panic(fmt.Sprintf("unexpected status %d: %s", resp.StatusCode, string(body)))
+	}
 
 	var data map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
