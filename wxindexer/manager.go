@@ -8,6 +8,8 @@ import (
 	"time"
 	"bufio"
 	"sync"
+	"fmt"
+	"sort"
 
 	"common"
 	"wxindexer/cleaners"
@@ -26,6 +28,53 @@ var (
 )
 
 func main() {
+
+	pagerank.LoadStructures("./localdata/pagegraph/")
+	
+	pagerank.AddPage(containers.PageLinkData{
+		URL: "a",
+		Links: &containers.Set[string]{"b": {}},
+		Redirect: nil,
+	})
+	pagerank.Pprint()
+	pagerank.AddPage(containers.PageLinkData{
+		URL: "b",
+		Links: &containers.Set[string]{"a": {}},
+		Redirect: nil,
+	})
+	pagerank.Pprint()
+	for i := range(10) {
+		pagerank.AddPage(containers.PageLinkData{
+			URL: strconv.Itoa(i),
+			Links: &containers.Set[string]{"a": {}},
+			Redirect: nil,
+		})
+	}
+	pagerank.PreProcess()
+	pagerank.Pprint()
+	
+	pagerank.PreProcess()
+	var result = pagerank.RunPageRank(20)
+	
+	var max_val float64 = 0
+	var max_url string = ""
+	var result = pagerank.GetScores()
+	type KeyValuePair struct {
+        Key   string
+        Value float64
+    }
+    var pairs []KeyValuePair
+    for k, v := range result {
+        pairs = append(pairs, KeyValuePair{k, v})
+    }
+    sort.Slice(pairs, func(i, j int) bool {
+        return pairs[i].Value > pairs[j].Value
+    })
+	for i := range 30 {
+		log.Printf("wxindexer/manager: Page %d: %s with score %f", i, pairs[i].Key, pairs[i].Value)
+    }
+	return
+
 	log.Println("wxindexer/manager: initalizing cleaner")
 	cleaner := cleaners.NewWikipediaCleaner()
 
@@ -60,21 +109,30 @@ func main() {
 	index_chan := make(chan common.PageData, 1000)
 	write_chan := make(chan containers.PageTF, 1000)
 	pg_map_chan := make(chan containers.PageLinkData, 1000)
+	stop_logging := make(chan bool)
 
-	go func() {
+	go func(stop chan bool) {
 		for {
-			log.Printf("wxindexer/manager: Indexing Queue: %d", len(index_chan))
-			log.Printf("wxindexer/manager: Write Queue: %d", len(write_chan))
-			log.Printf("wxindexer/manager: Page Map Queue: %d", len(pg_map_chan))
-			pagerank.LogStats()
-			time.Sleep(1 * time.Second)
+			select {
+			case <- stop:
+				log.Printf("wxindexer/manager: Ending stats logging")
+				return
+			default:
+				fmt.Printf("\r\033[KQueue status: Indexing %d, Writing: %d, Pg Mapping: %d",
+					len(index_chan),
+					len(write_chan),
+					len(pg_map_chan),
+				)
+				time.Sleep(1 * time.Second)
+			}
 		}
-	}()
+	}(stop_logging)
 
 	reader_group.Add(1)
 	writer_group.Add(2)
 	indexer_group.Add(workers)
 
+	var count int64 = 0
 	go socketReader(decoder, index_chan)
 	go jsonWriter(write_chan)
 	go pgMapper(pg_map_chan)
@@ -89,6 +147,22 @@ func main() {
 	close(write_chan)
 	close(pg_map_chan)
 	writer_group.Wait()
+	close(stop_logging)
+
+	log.Printf("Num words: %d", count)
+
+	/*
+	result = pagerank.RunPageRank(20)
+	max_val = 0
+	max_url = ""
+	for key, value := range result {
+		if value > max_val {
+			max_val = value
+			max_url = key
+		}
+	}
+	log.Printf("wxindexer/manager: Found highest ranking page %s with score %f", max_url, max_val)
+	*/
 }
 
 func newRedisClient() *redis.Client {
@@ -97,14 +171,14 @@ func newRedisClient() *redis.Client {
 	})
 }
 
-func loadStopWords() (*containers.Set, error) {
+func loadStopWords() (*containers.Set[string], error) {
 	file, err := os.Open("./data/stopwords")
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	stopwords := containers.NewSet()
+	stopwords := containers.NewSet[string]()
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -148,7 +222,7 @@ func socketReader(decoder *msgpack.Decoder, out_chan chan <- common.PageData) {
 func indexer(
 	id int,
 	cleaner cleaners.Cleaner,
-	stopwords *containers.Set,
+	stopwords *containers.Set[string],
 	rdb *redis.Client,
 	in_chan <- chan common.PageData,
 	write_chan chan <- containers.PageTF,
@@ -159,7 +233,7 @@ func indexer(
 		if page, ok := <- in_chan; ok {
 			tf = index(page, cleaner, stopwords, rdb)
 			write_chan <- tf
-			pg_map_chan <- containers.PageLinkData{URL: tf.URL, Links: &tf.Links, Redirect: tf.Redirect}
+			//pg_map_chan <- containers.PageLinkData{URL: tf.URL, Links: containers.SetFromSlice(tf.Links), Redirect: tf.Redirect}
 		} else {
 			log.Printf("wxindexer/indexer@%d: exiting\n", id)
 			break
@@ -169,11 +243,10 @@ func indexer(
 }
 
 func pgMapper(pg_map_chan <- chan containers.PageLinkData) {
-	pagerank.LoadPageWeb("./localdata/pagegraph/.pagegraph")
+	//pagerank.LoadPageWeb("./localdata/pagegraph/.pagegraph")
 	for pg := range pg_map_chan {
 		pagerank.AddPage(pg)
 	}
-	pagerank.DumpPageWeb("./localdata/pagegraph/.pagegraph")
 	log.Println("wxindexer/pgmapper: exiting")
 	writer_group.Done()
 }

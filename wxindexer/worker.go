@@ -15,7 +15,7 @@ var ctx = context.Background()
 func index(
 	page common.PageData,
 	cleaner cleaners.Cleaner,
-	stopwords *containers.Set,
+	stopwords *containers.Set[string],
 	rdb *redis.Client,
 ) containers.PageTF {
 	// Clean raw text
@@ -37,12 +37,10 @@ func index(
 
 	// Index
 	frequencies := make(map[string]int)
-	var word_count int64 = 0
 
 	for _, word := range words {
 		if !stopwords.Contains(word) {
 			frequencies[word]++
-			word_count++
 		}
 	}
 

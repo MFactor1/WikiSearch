@@ -110,7 +110,7 @@ func (v *WikipediaCleaner) Clean(text string) containers.Doc {
 	return containers.Doc{Body: &text, Links: &links, Redirect: nil}
 }
 
-func get_invalid_namespaces() *containers.Set {
+func get_invalid_namespaces() *containers.Set[string] {
 	fmt.Println("wxindexer/cleaner: fetching invalid namespaces")
 	url := "https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=namespaces&format=json"
 
@@ -148,7 +148,7 @@ func get_invalid_namespaces() *containers.Set {
 		panic(fmt.Errorf("Expected 'namespaces' key in namespaces JSON: %s", query))
 	}
 
-	invalid_namespaces := containers.NewSet()
+	invalid_namespaces := containers.NewSet[string]()
 	for _, namespace := range namespaces {
 		if nsMap, ok := namespace.(map[string]any); ok {
 			if name, exists := nsMap["*"]; exists && name != "" {

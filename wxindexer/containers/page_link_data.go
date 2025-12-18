@@ -2,6 +2,6 @@ package containers
 
 type PageLinkData struct {
 	URL string
-	Links *[]string
+	Links *Set[string]
 	Redirect *string
 }
