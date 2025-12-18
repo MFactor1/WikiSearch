@@ -11,8 +11,12 @@ import (
 	"time"
 	"regexp"
 	"bufio"
+	"fmt"
+
 	"github.com/vmihailenco/msgpack/v5"
+
 	"common"
+	"wxunpacker/utils"
 )
 
 type Page struct {
@@ -21,13 +25,15 @@ type Page struct {
 	Namespace string `xml:"ns"`
 }
 
+const GB = 1073741824
+
 var reRedirect = regexp.MustCompile(`^#REDIRECT \[\[(.*?)\]\]`)
 
 func main() {
-	num_pages, err := countPagesCustomDecoder("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
-	if err != nil {
-		panic(err)
-	}
+	//num_pages, err := countPagesCustomDecoder("/run/media/matthewnesbitt/Linux 1TB SSD/WikiDump/enwiki-20250320-pages-articles-multistream.xml")
+	//if err != nil {
+	//	panic(err)
+	//}
 
 	log.Println("Starting Indexing")
 	addr := "/tmp/windexIPC.sock"
@@ -46,12 +52,15 @@ func main() {
 	defer file.Close()
 
 	//bz2_reader := bzip2.NewReader(file)
-	decoder := xml.NewDecoder(file)
+	reader := &utils.CountingReader{Reader: file}
+	decoder := xml.NewDecoder(reader)
 
 	var page Page
 	var i = 0
 	var diff = 0
 	var send_chan = make(chan common.PageData, 1000)
+	var file_stats, _ = file.Stat()
+	var file_size = file_stats.Size()
 
 	go sendPages(send_chan, encoder)
 
@@ -83,15 +92,16 @@ func main() {
 			}
 			if diff >= 1000 {
 				elapsed := time.Since(start).Seconds()
-				completion := float64(i) / float64(num_pages)
-				etr_s := int(float64(elapsed) / completion - float64(elapsed))
-				log.Printf("wxunpacker: Processed:%d/%d, %.2f%%, ETR: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds\n",
+				completion := float64(reader.Bytes) / float64(file_size)
+				eta_s := int(float64(elapsed) / completion - float64(elapsed))
+				fmt.Printf("\r\033[Kwxunpacker: Processed: %d pages, %.1f/%.0fGB (%.2f%%), ETA: %dh, %dm, %ds, Elapsed: %dh, %dm, %ds",
 					i,
-					num_pages,
+					float64(reader.Bytes) / float64(GB),
+					float64(file_size) / float64(GB),
 					100 * completion,
-					etr_s / 3600,
-					(etr_s % 3600) / 60,
-					etr_s % 60,
+					eta_s / 3600,
+					(eta_s % 3600) / 60,
+					eta_s % 60,
 					int(elapsed) / 3600,
 					(int(elapsed) % 3600) / 60,
 					int(elapsed) % 60,
@@ -106,6 +116,7 @@ func main() {
 		default:
 		}
 	}
+	fmt.Println()
 }
 
 func countPagesWithXMLDecoder(path string) (int, error) {
