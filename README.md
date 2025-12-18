@@ -12,5 +12,6 @@ Some extra technical details:
 - Mongodb stores the highest scoring pages for each term in the corpus, in order of PageRank score. User queries are broken into these terms to find search results.
 
 ### WikiSearch Data Flow Diagram
-<img width="3543" height="2856" alt="WIndex_Data_Flow_light" src="https://github.com/user-attachments/assets/41e59dc6-49cb-44c3-a33c-e6db10a31df3" />
+<img width="3543" height="2856" alt="WIndex_Data_Flow_dark" src="https://github.com/user-attachments/assets/ba5d598d-1575-4c0c-b3b7-5b1552d6999e" />
+
 
